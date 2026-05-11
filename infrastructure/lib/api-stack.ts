@@ -3,6 +3,7 @@ import { Construct } from 'constructs';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as path from 'path';
 import { DatabaseStack } from './database-stack';
 
@@ -24,6 +25,7 @@ export class ApiStack extends cdk.Stack {
         ACTIVITY_LOGS_TABLE: props.databaseStack.activityLogsTable.tableName,
       },
     });
+
     props.databaseStack.complaintsTable.grantWriteData(createComplaintFunction);
     props.databaseStack.activityLogsTable.grantWriteData(createComplaintFunction);
 
@@ -36,6 +38,7 @@ export class ApiStack extends cdk.Stack {
         COMPLAINTS_TABLE: props.databaseStack.complaintsTable.tableName,
       },
     });
+
     props.databaseStack.complaintsTable.grantReadData(getComplaintsFunction);
 
     const updateComplaintFunction = new lambdaNodejs.NodejsFunction(this, 'UpdateComplaintFunction', {
@@ -48,6 +51,7 @@ export class ApiStack extends cdk.Stack {
         ACTIVITY_LOGS_TABLE: props.databaseStack.activityLogsTable.tableName,
       },
     });
+
     props.databaseStack.complaintsTable.grantReadWriteData(updateComplaintFunction);
     props.databaseStack.activityLogsTable.grantWriteData(updateComplaintFunction);
 
@@ -61,6 +65,7 @@ export class ApiStack extends cdk.Stack {
         ACTIVITY_LOGS_TABLE: props.databaseStack.activityLogsTable.tableName,
       },
     });
+
     props.databaseStack.complaintsTable.grantReadWriteData(deleteComplaintFunction);
     props.databaseStack.activityLogsTable.grantWriteData(deleteComplaintFunction);
 
@@ -73,6 +78,7 @@ export class ApiStack extends cdk.Stack {
         COMPLAINTS_TABLE: props.databaseStack.complaintsTable.tableName,
       },
     });
+
     props.databaseStack.complaintsTable.grantWriteData(addCommentFunction);
 
     const getComplaintByIdFunction = new lambdaNodejs.NodejsFunction(this, 'GetComplaintByIdFunction', {
@@ -84,6 +90,7 @@ export class ApiStack extends cdk.Stack {
         COMPLAINTS_TABLE: props.databaseStack.complaintsTable.tableName,
       },
     });
+
     props.databaseStack.complaintsTable.grantReadData(getComplaintByIdFunction);
 
     const logActivityFunction = new lambdaNodejs.NodejsFunction(this, 'LogActivityFunction', {
@@ -95,6 +102,7 @@ export class ApiStack extends cdk.Stack {
         ACTIVITY_LOGS_TABLE: props.databaseStack.activityLogsTable.tableName,
       },
     });
+
     props.databaseStack.activityLogsTable.grantWriteData(logActivityFunction);
 
     const getActivityLogsFunction = new lambdaNodejs.NodejsFunction(this, 'GetActivityLogsFunction', {
@@ -106,7 +114,29 @@ export class ApiStack extends cdk.Stack {
         ACTIVITY_LOGS_TABLE: props.databaseStack.activityLogsTable.tableName,
       },
     });
+
     props.databaseStack.activityLogsTable.grantReadData(getActivityLogsFunction);
+
+    // NEW FUNCTION FOR S3 UPLOAD URL
+    const getUploadUrlFunction = new lambdaNodejs.NodejsFunction(this, 'GetUploadUrlFunction', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, '../../backend/src/handlers/getUploadUrl.ts'),
+      projectRoot: path.join(__dirname, '../..'),
+      handler: 'handler',
+      environment: {
+        S3_BUCKET: 'storagestack-complaintsbucket5c2042cb-lawhvbath5cl',
+      },
+    });
+
+    // IMPORT EXISTING S3 BUCKET
+    const bucket = s3.Bucket.fromBucketName(
+      this,
+      'ComplaintsBucket',
+      'storagestack-complaintsbucket5c2042cb-lawhvbath5cl'
+    );
+
+    // GRANT UPLOAD PERMISSION
+    bucket.grantPut(getUploadUrlFunction);
 
     const api = new apigateway.RestApi(this, 'ComplaintApi', {
       defaultCorsPreflightOptions: {
@@ -120,15 +150,28 @@ export class ApiStack extends cdk.Stack {
     const complaintById = complaints.addResource('{id}');
     const activityLogs = api.root.addResource('activityLogs');
 
+    // NEW API ROUTE
+    const uploadUrl = api.root.addResource('getUploadUrl');
+
     complaints.addMethod('POST', new apigateway.LambdaIntegration(createComplaintFunction));
     complaints.addMethod('GET', new apigateway.LambdaIntegration(getComplaintsFunction));
     complaints.addMethod('PUT', new apigateway.LambdaIntegration(updateComplaintFunction));
     complaints.addMethod('PATCH', new apigateway.LambdaIntegration(addCommentFunction));
     complaints.addMethod('DELETE', new apigateway.LambdaIntegration(deleteComplaintFunction));
+
     complaintById.addMethod('GET', new apigateway.LambdaIntegration(getComplaintByIdFunction));
+
     activityLogs.addMethod('POST', new apigateway.LambdaIntegration(logActivityFunction));
     activityLogs.addMethod('GET', new apigateway.LambdaIntegration(getActivityLogsFunction));
 
-    new cdk.CfnOutput(this, 'ApiUrl', { value: api.url });
+    // NEW METHOD
+    uploadUrl.addMethod(
+      'POST',
+      new apigateway.LambdaIntegration(getUploadUrlFunction)
+    );
+
+    new cdk.CfnOutput(this, 'ApiUrl', {
+      value: api.url,
+    });
   }
 }
