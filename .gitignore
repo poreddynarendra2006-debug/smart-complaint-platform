@@ -1,0 +1,13 @@
+node_modules/
+**/node_modules/
+.next/
+cdk.out/
+infrastructure/cdk.out/
+dist/
+build/
+.env
+.env.local
+.env.production
+*.log
+.DS_Store
+Thumbs.db
